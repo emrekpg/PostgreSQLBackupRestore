@@ -1,0 +1,78 @@
+﻿<Window x:Class="PostgreSQLBackupRestore.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PostgreSQL Yedekleme ve Geri Yükleme" Height="772" Width="984" BorderThickness="1">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="PrimaryColor" Color="#FF5A5A5A"/>
+        <SolidColorBrush x:Key="SecondaryColor" Color="#FF7A7A7A"/>
+        <SolidColorBrush x:Key="AccentColor" Color="#FF45A5F4"/>
+        <SolidColorBrush x:Key="LightColor" Color="#FFF1F1F1"/>
+
+        <!-- Buton stili tanımlamaları -->
+        <Style x:Key="ActionButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentColor}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="10" Background="{StaticResource LightColor}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="2*"/>
+            <ColumnDefinition Width="3*"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="4*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Sol bölüm: Backup alma -->
+        <GroupBox Header="Backup" Grid.Column="0" Margin="5" Foreground="{StaticResource PrimaryColor}">
+            <StackPanel Margin="10">
+                <Label Content="IP Adresi"/>
+                <TextBox x:Name="txtIpAddress" Height="25" Margin="0,0,0,10"/>
+                <Button x:Name="btnConnect" Content="Bağlan" Style="{StaticResource ActionButtonStyle}" Click="Connect_Click"/>
+                <Label Content="Veritabanları"/>
+                <ComboBox x:Name="cbDatabases" DisplayMemberPath="database_name" Height="25" Margin="0,0,0,10" SelectionChanged="cbDatabases_SelectionChanged"/>
+                <Label Content="Schemalar" FontWeight="Bold"/>
+                <ListBox x:Name="lbSchemas" DisplayMemberPath="schema_name" Height="150" MouseDoubleClick="lbSchemas_MouseDoubleClick"/>
+                <Button x:Name="btnRefreshSchemasBackup" Content="Şemaları Yenile" Style="{StaticResource ActionButtonStyle}" Click="RefreshSchemasBackup_Click"/>
+                <ProgressBar x:Name="progressBarBackup" Height="20" IsIndeterminate="True" Visibility="Collapsed"
+             Foreground="#FF45A5F4" Background="#FFD3D3D3" BorderThickness="1"/>
+
+
+                <!--<Label Content="Tablolar" FontWeight="Bold"/>
+                <ListBox x:Name="lbTables" DisplayMemberPath="table_name" Height="150" Margin="0,0,0,10"/>
+                <Button x:Name="btnBackupTable" Content="Tablo Yedeği Al" Style="{StaticResource ActionButtonStyle}" Click="BackupTable_Click"/>-->
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Orta bölüm: Restore işlemi -->
+        <GroupBox Header="Restore" Grid.Column="1" Margin="5" Foreground="{StaticResource PrimaryColor}">
+            <StackPanel Margin="10">
+                <Label Content="IP Adresi"/>
+                <TextBox x:Name="txtIpAddressRestore" Height="25" Margin="0,0,0,10"/>
+                <Button x:Name="btnConnectRestore" Content="Bağlan" Style="{StaticResource ActionButtonStyle}" Click="ConnectRestore_Click"/>
+                <Label Content="Veritabanları"/>
+                <ComboBox x:Name="cbDatabasesRestore" DisplayMemberPath="database_name" Height="25" Margin="0,0,0,10" SelectionChanged="cbDatabasesRestore_SelectionChanged"/>
+                <Button x:Name="btnRefreshSchemasRestore" Content="Şemaları Yenile" Style="{StaticResource ActionButtonStyle}" Click="RefreshSchemasRestore_Click"/>
+                <Label Content="Schemalar" FontWeight="Bold"/>
+                <ListBox x:Name="lbSchemasRestore" DisplayMemberPath="schema_name" Height="150" Margin="0,0,0,10"/>
+                <Button x:Name="btnDropCascade" Content="Drop Cascade" Style="{StaticResource ActionButtonStyle}" Click="DropCascade_Click"/>
+                <Button x:Name="btnSelectBackupFile" Content="Yedek Dosyasını Seç" Style="{StaticResource ActionButtonStyle}" Click="SelectBackupFile_Click"/>
+                <TextBox x:Name="txtBackupFilePath" IsReadOnly="True" Height="25" Margin="0,0,0,10"/>
+                <Button x:Name="btnRestoreBackup" Content="Yedeği Geri Yükle" Style="{StaticResource ActionButtonStyle}" Click="RestoreBackup_Click"/>
+                <ProgressBar x:Name="progressBarRestore" Height="20" IsIndeterminate="True" Visibility="Collapsed"
+             Foreground="#FF45A5F4" Background="#FFD3D3D3" BorderThickness="1"/>
+
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Sağ bölüm: Log -->
+        <GroupBox Header="Log" Grid.Column="3" Margin="5" Foreground="{StaticResource PrimaryColor}">
+            <TextBox x:Name="txtLog" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" Margin="10"/>
+        </GroupBox>
+    </Grid>
+</Window>
