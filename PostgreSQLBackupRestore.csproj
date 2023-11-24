@@ -120,5 +120,8 @@
   <ItemGroup>
     <Resource Include="LOGO_IO.ico" />
   </ItemGroup>
+  <ItemGroup>
+  <PackageReference Include="Npgsql" Version="4.0.10" />
+ </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

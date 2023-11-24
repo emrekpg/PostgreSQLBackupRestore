@@ -1,12 +1,18 @@
 ﻿using Microsoft.Win32;
 using Npgsql;
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Threading;
 
 namespace PostgreSQLBackupRestore
 {
@@ -36,6 +42,7 @@ namespace PostgreSQLBackupRestore
     {
         private NpgsqlConnection connection;
         private ILogger logger;
+        private ObservableCollection<TableInfo> tableInfoList = new ObservableCollection<TableInfo>();
 
         public MainWindow()
         {
@@ -167,7 +174,7 @@ namespace PostgreSQLBackupRestore
 
                         if (string.IsNullOrEmpty(errors))
                         {
-                            await logger.LogAsync ("Yedekleme tamamlandı.");
+                            await logger.LogAsync("Yedekleme tamamlandı.");
                         }
                         else
                         {
@@ -384,6 +391,325 @@ namespace PostgreSQLBackupRestore
             {
                 MessageBox.Show("Lütfen bir veritabanı seçin.");
             }
+        }
+
+        private async Task RefreshTableList()
+        {
+            // ComboBox'tan seçili veritabanı ve şema adını al
+            if (cbDatabasesTableBackup.SelectedItem is DataRowView selectedDatabase &&
+                cbSchemasTableBackup.SelectedItem is DataRowView selectedSchema)
+            {
+                string databaseName = selectedDatabase["database_name"].ToString();
+                string schemaName = selectedSchema["schema_name"].ToString();
+                string connectionString = BuildConnectionString(txtIpAddressTableBackup.Text, databaseName);
+
+                // Veritabanından tablo isimlerini alacak SQL sorgusu
+                string query = $"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schemaName}'";
+
+                // Veritabanından tablo isimlerini almak için DataTable kullan
+                DataTable table = new DataTable();
+                try
+                {
+                    using (NpgsqlConnection connection = new NpgsqlConnection(connectionString))
+                    {
+                        await connection.OpenAsync();
+                        using (NpgsqlCommand command = new NpgsqlCommand(query, connection))
+                        {
+                            using (NpgsqlDataAdapter adapter = new NpgsqlDataAdapter(command))
+                            {
+                                adapter.Fill(table);
+                            }
+                        }
+                    }
+
+                    // tableInfoList'i DataTable'dan alınan verilerle doldur
+                    tableInfoList.Clear();
+                    foreach (DataRow row in table.Rows)
+                    {
+                        tableInfoList.Add(new TableInfo { TableName = row["table_name"].ToString(), IsSelected = false });
+                    }
+
+                    // ListBox'un ItemsSource'unu güncelle
+                    lbTablesTableBackup.ItemsSource = tableInfoList;
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Veritabanı sorgusunda hata oluştu: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                    // Loglama için ILogger kullanabilirsiniz
+                }
+            }
+            else
+            {
+                MessageBox.Show("Lütfen bir veritabanı ve şema seçin.", "Bilgi", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private async void ConnectTableBackup_Click(object sender, RoutedEventArgs e)
+        {
+            progressBarTableBackup.Visibility = Visibility.Visible;
+            progressBarTableBackup.IsIndeterminate = true;
+
+            try
+            {
+                string connectionString = BuildConnectionString(txtIpAddressTableBackup.Text);
+                await ExecuteDatabaseCommand(connectionString, "SELECT datname as database_name FROM pg_database", cbDatabasesTableBackup);
+                await logger.LogAsync("Tablo yedekleme için bağlantı başarıyla gerçekleştirildi.");
+                if (lbTablesTableBackup.ItemsSource!=null)
+                {
+                    lbTablesTableBackup.ItemsSource = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                await logger.LogAsync($"Tablo yedekleme bağlantı hatası: {ex.Message}");
+            }
+            finally
+            {
+                progressBarTableBackup.Visibility = Visibility.Collapsed;
+                progressBarTableBackup.IsIndeterminate = false;
+            }
+        }
+        private async void cbDatabasesTableBackup_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (cbDatabasesTableBackup.SelectedItem != null)
+            {
+                progressBarTableBackup.Visibility = Visibility.Visible;
+                progressBarTableBackup.IsIndeterminate = true;
+
+                DataRowView selectedDatabase = (DataRowView)cbDatabasesTableBackup.SelectedItem;
+                string databaseName = selectedDatabase["database_name"].ToString();
+                string connectionString = BuildConnectionString(txtIpAddressTableBackup.Text, databaseName);
+                //lbTablesTableBackup.ItemsSource = null;
+                await ExecuteDatabaseCommand(connectionString, $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'", cbSchemasTableBackup);
+                progressBarTableBackup.Visibility = Visibility.Collapsed;
+                progressBarTableBackup.IsIndeterminate = false;
+            }
+            else
+            {
+                lbTablesTableBackup.ItemsSource = null;
+            }
+        }
+
+
+        private async void cbSchemasTableBackup_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (cbSchemasTableBackup.SelectedItem != null)
+            {
+                DataRowView selectedSchema = (DataRowView)cbSchemasTableBackup.SelectedItem;
+                string schemaName = selectedSchema["schema_name"].ToString();
+                string databaseName = ((DataRowView)cbDatabasesTableBackup.SelectedItem)["database_name"].ToString();
+                string connectionString = BuildConnectionString(txtIpAddressTableBackup.Text, databaseName);
+
+                string query = $"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schemaName}'";
+                await ExecuteDatabaseCommand(connectionString, query, lbTablesTableBackup);
+                tableInfoList.Clear();
+                DataView dataView = (DataView)lbTablesTableBackup.ItemsSource;
+                foreach (DataRowView rowView in dataView)
+                {
+                    DataRow row = rowView.Row;
+                    tableInfoList.Add(new TableInfo { TableName = row["table_name"].ToString() });
+                }
+                lbTablesTableBackup.ItemsSource = tableInfoList;
+                lbTablesTableBackup.Items.Refresh(); // Bu satırı ekleyin
+            }
+        }
+
+        private async void BackupTable_Click(object sender, RoutedEventArgs e)
+        {
+            // Seçili tabloları filtrele
+            var selectedTables = tableInfoList.Where(table => table.IsSelected).ToList();
+
+            if (!selectedTables.Any())
+            {
+                MessageBox.Show("Lütfen yedeklemek istediğiniz tabloları seçin.");
+                return;
+            }
+
+            foreach (var table in selectedTables)
+            {
+                string tableName = table.TableName;
+                string schemaName = ((DataRowView)cbSchemasTableBackup.SelectedItem)["schema_name"].ToString();
+                string databaseName = ((DataRowView)cbDatabasesTableBackup.SelectedItem)["database_name"].ToString();
+
+                SaveFileDialog saveFileDialog = new SaveFileDialog
+                {
+                    Filter = "SQL files (*.sql)|*.sql",
+                    FileName = $"{databaseName}_{schemaName}_{tableName}_backup.sql"
+                };
+
+                if (saveFileDialog.ShowDialog() == true)
+                {
+                    Environment.SetEnvironmentVariable("PGPASSWORD", "123456"); // Burada PostgreSQL şifrenizi belirtin
+                    string pgDumpPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pg_dump.exe"); // pg_dump.exe'nin yolu
+
+                    // pg_dump komutunu oluştur
+                    string backupCommand = $"\"{pgDumpPath}\" --host \"{txtIpAddressTableBackup.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --file \"{saveFileDialog.FileName}\" --table \"\\\"{schemaName}\\\".\\\"{tableName}\\\"\" \"{databaseName}\"";
+
+                    ProcessStartInfo psi = new ProcessStartInfo
+                    {
+                        FileName = "cmd.exe",
+                        RedirectStandardInput = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    using (Process process = new Process { StartInfo = psi })
+                    {
+                        process.Start();
+
+                        using (StreamWriter sw = process.StandardInput)
+                        {
+                            if (sw.BaseStream.CanWrite)
+                            {
+                                sw.WriteLine(backupCommand);
+                                sw.WriteLine("exit");
+                            }
+                        }
+
+                        string errors = await process.StandardError.ReadToEndAsync();
+
+                        await process.WaitForExitAsync();
+
+                        if (string.IsNullOrEmpty(errors))
+                        {
+                            await logger.LogAsync("Yedekleme tamamlandı.");
+                        }
+                        else
+                        {
+                            await logger.LogAsync($"Hata oluştu: {errors}");
+                        }
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Lütfen bir tablo seçin.");
+                }
+            }
+        }
+        private async void DropTable_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedTables = tableInfoList.Where(table => table.IsSelected).ToList();
+            if (selectedTables.Count > 0)
+            {
+                string schemaName = ((DataRowView)cbSchemasTableBackup.SelectedItem)["schema_name"].ToString();
+                string databaseName = ((DataRowView)cbDatabasesTableBackup.SelectedItem)["database_name"].ToString();
+                string connectionString = BuildConnectionString(txtIpAddressTableBackup.Text, databaseName);
+
+                using (NpgsqlConnection dbConnection = new NpgsqlConnection(connectionString))
+                {
+                    try
+                    {
+                        await dbConnection.OpenAsync();
+
+                        foreach (var selectedItem in selectedTables)
+                        {
+                            TableInfo selectedTable = (TableInfo)selectedItem; // Cast to TableInfo
+                            string tableName = selectedTable.TableName;
+                            string dropQuery = $"DROP TABLE \"{schemaName}\".\"{tableName}\" CASCADE";
+
+                            NpgsqlCommand command = new NpgsqlCommand(dropQuery, dbConnection);
+                            await command.ExecuteNonQueryAsync();
+                            await logger.LogAsync($"Table successfully dropped: {schemaName}.{tableName}");
+                        }
+                        await RefreshTableList();
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"An error occurred while dropping tables: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        await logger.LogAsync($"Error dropping tables: {ex.Message}");
+                    }
+                }
+            }
+            else
+            {
+                MessageBox.Show("Please select the tables you want to drop.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private async void RestoreTable_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog
+            {
+                Filter = "SQL files (*.sql)|*.sql|All files (*.*)|*.*",
+                Title = "Yedek Dosyasını Seç"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string selectedBackupFilePath = openFileDialog.FileName;
+                DataRowView selectedDatabase = (DataRowView)cbDatabasesTableBackup.SelectedItem;
+
+                if (selectedDatabase == null)
+                {
+                    MessageBox.Show("Lütfen bir veritabanı seçin.");
+                    return;
+                }
+
+                string databaseName = selectedDatabase["database_name"].ToString();
+                string arguments = $"/c psql -h {txtIpAddressTableBackup.Text} -U postgres -d {databaseName} -f \"{selectedBackupFilePath}\"";
+
+
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                psi.EnvironmentVariables["PGPASSWORD"] = "123456";
+
+                using (Process process = new Process { StartInfo = psi })
+                {
+                    process.Start();
+
+                    // Komut istemine ekstra komutlar göndermek 
+                    // using (StreamWriter sw = process.StandardInput)
+                    // {
+                    //     sw.WriteLine("your_additional_commands_here");
+                    // }
+
+                    await process.WaitForExitAsync();
+
+                    string output = await process.StandardOutput.ReadToEndAsync();
+                    string errors = await process.StandardError.ReadToEndAsync();
+
+                    if (process.ExitCode == 0)
+                    {
+                        await logger.LogAsync("Yedek dosyası başarıyla geri yüklendi.");
+                        await RefreshTableList ();
+                    }
+                    else
+                    {
+                        throw new Exception(string.IsNullOrEmpty(errors) ? "Bilinmeyen hata." : errors);
+                    }
+                }
+            }
+        }
+
+        private void Search_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(txtSearch.Text))
+            {
+                lbTablesTableBackup.ItemsSource = tableInfoList;
+                lbTablesTableBackup.Items.Refresh(); // Bu satırı ekleyin
+
+            }
+            else
+            {
+                var filtered = tableInfoList.Where(item => item.TableName.IndexOf(txtSearch.Text, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                lbTablesTableBackup.ItemsSource = filtered;
+            }
+        }
+
+        public class TableInfo
+        {
+            public string TableName { get; set; }
+            public bool IsSelected { get; set; }
         }
 
         public interface ILogger
