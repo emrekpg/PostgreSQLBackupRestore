@@ -143,7 +143,7 @@ namespace PostgreSQLBackupRestore
                 {
                     Environment.SetEnvironmentVariable("PGPASSWORD", "123456");
                     string pgDumpPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pg_dump.exe");
-                    string backupCommand = $"\"{pgDumpPath}\" --host \"{txtIpAddress.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --format=c --blobs --schema \"\\\"{schemaName}\\\"\" -f \"{saveFileDialog.FileName}\" \"{databaseName}\"";
+                    string backupCommand = $"\"{pgDumpPath}\" --host \"{txtIpAddress.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --format=p --blobs --schema \"\\\"{schemaName}\\\"\" -f \"{saveFileDialog.FileName}\" \"{databaseName}\"";
 
                     ProcessStartInfo psi = new ProcessStartInfo
                     {
@@ -218,36 +218,44 @@ namespace PostgreSQLBackupRestore
                     {
                         string databaseName = selectedDatabase["database_name"].ToString();
 
-                        Environment.SetEnvironmentVariable("PGPASSWORD", "123456");
-
-                        string pgRestorePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pg_restore.exe");
-                        string restoreCommand = $"\"{pgRestorePath}\" -h \"{txtIpAddressRestore.Text}\" -U postgres -d \"{databaseName}\" -1 \"{backupFilePath}\"";
+                        string psqlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "psql.exe"); // psql.exe'nin yolu
+                        string restoreCommand = $"-h \"{txtIpAddressRestore.Text}\" -U postgres -d \"{databaseName}\" -f \"{backupFilePath}\"";
 
                         ProcessStartInfo psi = new ProcessStartInfo
                         {
-                            FileName = "cmd.exe",
-                            RedirectStandardInput = true,
+                            FileName = psqlPath,
+                            Arguments = restoreCommand,
                             UseShellExecute = false,
-                            CreateNoWindow = true
+                            CreateNoWindow = true,
+                            RedirectStandardInput = true,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
                         };
+                        psi.EnvironmentVariables["PGPASSWORD"] = "123456"; // PostgreSQL şifrenizi burada belirtin
 
                         using (Process process = new Process { StartInfo = psi })
                         {
                             process.Start();
 
-                            using (StreamWriter sw = process.StandardInput)
+                            string output = await process.StandardOutput.ReadToEndAsync();
+                            string errors = await process.StandardError.ReadToEndAsync();
+
+                            if (!string.IsNullOrEmpty(errors))
                             {
-                                if (sw.BaseStream.CanWrite)
-                                {
-                                    await sw.WriteLineAsync(restoreCommand);
-                                    await sw.WriteLineAsync("exit");
-                                }
+                                Console.WriteLine("Hata: " + errors);
                             }
 
                             await process.WaitForExitAsync();
-                        }
 
-                        await logger.LogAsync("Yedek geri yükleme tamamlandı.");
+                            if (process.ExitCode == 0)
+                            {
+                                await logger.LogAsync("Yedek dosyası başarıyla geri yüklendi.");
+                            }
+                            else
+                            {
+                                throw new Exception(string.IsNullOrEmpty(errors) ? "Bilinmeyen hata." : errors);
+                            }
+                        }
                     }
                     else
                     {
@@ -265,11 +273,43 @@ namespace PostgreSQLBackupRestore
             }
             finally
             {
+                DataRowView electedDatabase = (DataRowView)cbDatabasesRestore.SelectedItem;
+                string dBName = electedDatabase["database_name"].ToString();
+                string connectionString = BuildConnectionString(txtIpAddressRestore.Text, dBName);
+                string schemaName = "TESASch"; // Şema adı
+                string triggerName = "trg_event_eventvalueinsert"; // Tetikleyici adı
+                string triggerSql = @"CREATE TRIGGER trg_event_eventvalueinsert BEFORE INSERT ON ""TESASch"".t_event FOR EACH ROW EXECUTE PROCEDURE ""TESASch"".trg_event_eventvalueinsert();";
+                await CreateTriggerIfNotExists(connectionString, schemaName, triggerName, triggerSql);
                 progressBarRestore.Visibility = Visibility.Collapsed;
                 progressBarRestore.IsIndeterminate = false;
             }
         }
 
+        private async Task<bool> CheckIfTriggerExists(NpgsqlConnection connection, string schemaName, string triggerName)
+        {
+            string query = $"SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '{triggerName}');";
+            using (NpgsqlCommand cmd = new NpgsqlCommand(query, connection))
+            {
+                return (bool)await cmd.ExecuteScalarAsync();
+            }
+        }
+
+        private async Task CreateTriggerIfNotExists(string connectionString, string schemaName, string triggerName, string triggerSql)
+        {
+            using (NpgsqlConnection conn = new NpgsqlConnection(connectionString))
+            {
+                await conn.OpenAsync();
+
+                bool triggerExists = await CheckIfTriggerExists(conn, schemaName, triggerName);
+                if (!triggerExists)
+                {
+                    using (NpgsqlCommand cmd = new NpgsqlCommand(triggerSql, conn))
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+                }
+            }
+        }
 
         private async void ConnectRestore_Click(object sender, RoutedEventArgs e)
         {

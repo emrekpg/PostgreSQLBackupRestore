@@ -42,7 +42,7 @@
   <ItemGroup>
     <Reference Include="Npgsql, Version=2.2.5.0, Culture=neutral, PublicKeyToken=5d8b90d52f46fda7, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>D:\Emre\Git\00_TESA\00_libs\packages\Npgsql.4.0.10\lib\net45\Npgsql.dll</HintPath>
+      <HintPath>..\..\00_TESA\00_libs\packages\Npgsql.4.0.10\lib\net45\Npgsql.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
@@ -120,8 +120,5 @@
   <ItemGroup>
     <Resource Include="LOGO_IO.ico" />
   </ItemGroup>
-  <ItemGroup>
-  <PackageReference Include="Npgsql" Version="4.0.10" />
- </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -1,14 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.34031.81
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34330.188
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PostgreSQLBackupRestore", "PostgreSQLBackupRestore.csproj", "{59ACD8EC-36FA-4828-BF55-AB5C20258764}"
-EndProject
-Project("{E729F059-12D4-455F-A2A4-FDA8DD25E08A}") = "PostgreSQLBackupRestoreSetup", "..\PostgreSQLBackupRestoreSetup\PostgreSQLBackupRestoreSetup.isproj", "{21B88A5A-D1BB-45AD-B4FA-8CE64E1A6AB3}"
-	ProjectSection(ProjectDependencies) = postProject
-		{59ACD8EC-36FA-4828-BF55-AB5C20258764} = {59ACD8EC-36FA-4828-BF55-AB5C20258764}
-	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -20,10 +15,6 @@ Global
 		{59ACD8EC-36FA-4828-BF55-AB5C20258764}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{59ACD8EC-36FA-4828-BF55-AB5C20258764}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{59ACD8EC-36FA-4828-BF55-AB5C20258764}.Release|Any CPU.Build.0 = Release|Any CPU
-		{21B88A5A-D1BB-45AD-B4FA-8CE64E1A6AB3}.Debug|Any CPU.ActiveCfg = Debug
-		{21B88A5A-D1BB-45AD-B4FA-8CE64E1A6AB3}.Debug|Any CPU.Build.0 = Debug
-		{21B88A5A-D1BB-45AD-B4FA-8CE64E1A6AB3}.Release|Any CPU.ActiveCfg = Release
-		{21B88A5A-D1BB-45AD-B4FA-8CE64E1A6AB3}.Release|Any CPU.Build.0 = Release
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
