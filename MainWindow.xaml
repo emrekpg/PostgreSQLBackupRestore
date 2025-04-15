@@ -4,6 +4,8 @@
         Title="PostgreSQL Yedekleme ve Geri Yükleme" Height="820" Width="1367.947" BorderThickness="1">
 
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
         <SolidColorBrush x:Key="PrimaryColor" Color="#FF5A5A5A"/>
         <SolidColorBrush x:Key="SecondaryColor" Color="#FF7A7A7A"/>
         <SolidColorBrush x:Key="AccentColor" Color="#FF45A5F4"/>
@@ -41,7 +43,32 @@
                 <Button x:Name="btnRefreshSchemasBackup" Content="Şemaları Yenile" Style="{StaticResource ActionButtonStyle}" Click="RefreshSchemasBackup_Click"/>
                 <ProgressBar x:Name="progressBarBackup" Height="20" IsIndeterminate="True" Visibility="Collapsed"
              Foreground="#FF45A5F4" Background="#FFD3D3D3" BorderThickness="1"/>
+                <StackPanel Orientation="Vertical" Margin="10">
+                    <CheckBox x:Name="chkDateFilter" Content="Tarih Aralığı ile Filtrele" />
+                    <!-- Boolean-to-Visibility converter kullanarak DatePicker'ların görünürlüğünü kontrol edebilirsiniz -->
+                    <DatePicker x:Name="dpStartDate"
+                                Width="150"
+                                Margin="0,0,10,0"
+                                SelectedDateFormat="Short"
+                                Background="#FFF"
+                                BorderBrush="#FF007ACC"
+                                BorderThickness="1"
+                                Padding="5"
+                                FontSize="14"
+                                Visibility="{Binding IsChecked, ElementName=chkDateFilter, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
+                    <DatePicker x:Name="dpEndDate"
+                                Width="150"
+                                Margin="0"
+                                SelectedDateFormat="Short"
+                                Background="#FFF"
+                                BorderBrush="#FF007ACC"
+                                BorderThickness="1"
+                                Padding="5"
+                                FontSize="14"
+                                Visibility="{Binding IsChecked, ElementName=chkDateFilter, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                </StackPanel>
 
                 <!--<Label Content="Tablolar" FontWeight="Bold"/>
                 <ListBox x:Name="lbTables" DisplayMemberPath="table_name" Height="150" Margin="0,0,0,10"/>
@@ -66,6 +93,7 @@
                 <Button x:Name="btnRestoreBackup" Content="Yedeği Geri Yükle" Style="{StaticResource ActionButtonStyle}" Click="RestoreBackup_Click"/>
                 <ProgressBar x:Name="progressBarRestore" Height="20" IsIndeterminate="True" Visibility="Collapsed"
              Foreground="#FF45A5F4" Background="#FFD3D3D3" BorderThickness="1"/>
+                <Button Content="CSV Restore Et" Click="RestoreCsvFilesWithConflictHandling_Click" Style="{StaticResource ActionButtonStyle}" />
 
             </StackPanel>
         </GroupBox>

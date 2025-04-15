@@ -121,6 +121,47 @@ namespace PostgreSQLBackupRestore
                 await logger.LogAsync($"Veritabanı sorgusu çalıştırılırken bir hata oluştu: {ex.Message}");
             }
         }
+        private async Task<List<string>> GetTableNamesForSchema(string databaseName, string schemaName, string ipAddress)
+        {
+            List<string> tableNames = new List<string>();
+            string connectionString = $"Host={ipAddress};Database={databaseName};Username=postgres;Password=123456;Timeout=60;Pooling=true;";
+            string query = $"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schemaName}'";
+
+            using (NpgsqlConnection connection = new NpgsqlConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                using (NpgsqlCommand command = new NpgsqlCommand(query, connection))
+                using (NpgsqlDataReader reader =  command.ExecuteReader())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        tableNames.Add(reader["table_name"].ToString());
+                    }
+                }
+            }
+            return tableNames;
+        }
+        private async Task<bool> CheckTableHasData(string dbName, string schema, string table, string startDate, string endDate, string host)
+        {
+            try
+            {
+                using (var conn = new Npgsql.NpgsqlConnection($"Host={host};Port=5432;Username=postgres;Password=123456;Database={dbName}"))
+                {
+                    await conn.OpenAsync();
+                    string query = $"SELECT COUNT(*) FROM \"{schema}\".\"{table}\" WHERE \"sys_tag_log_time\" BETWEEN '{startDate}' AND '{endDate}'";
+                    using (var cmd = new Npgsql.NpgsqlCommand(query, conn))
+                    {
+                        var result = await cmd.ExecuteScalarAsync();
+                        return Convert.ToInt32(result) > 0;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                await logger.LogAsync($"[Veri kontrol hatası] {schema}.{table}: {ex.Message}");
+                return false; // Hata varsa güvenli şekilde işlem atlanır
+            }
+        }
 
         private async void lbSchemas_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
@@ -133,58 +174,143 @@ namespace PostgreSQLBackupRestore
                 string schemaName = selectedSchema["schema_name"].ToString();
                 string databaseName = ((DataRowView)cbDatabases.SelectedItem)["database_name"].ToString();
 
-                SaveFileDialog saveFileDialog = new SaveFileDialog
+                // Eğer checkbox işaretliyse tarih aralığına göre tablo bazlı yedekleme yap
+                if (chkDateFilter.IsChecked == true && dpStartDate.SelectedDate.HasValue && dpEndDate.SelectedDate.HasValue)
                 {
-                    Filter = "SQL files (*.sql)|*.sql",
-                    FileName = $"{databaseName}_{schemaName}_backup.sql"
-                };
-
-                if (saveFileDialog.ShowDialog() == true)
-                {
-                    Environment.SetEnvironmentVariable("PGPASSWORD", "123456");
-                    string pgDumpPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pg_dump.exe");
-                    string backupCommand = $"\"{pgDumpPath}\" --host \"{txtIpAddress.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --format=p --blobs --schema \"\\\"{schemaName}\\\"\" -f \"{saveFileDialog.FileName}\" \"{databaseName}\"";
-
-                    ProcessStartInfo psi = new ProcessStartInfo
+                    List<string> tableNames = await GetTableNamesForSchema(databaseName, schemaName, txtIpAddress.Text);
+                    if (tableNames.Count == 0)
                     {
-                        FileName = "cmd.exe",
-                        RedirectStandardInput = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    using (Process process = new Process { StartInfo = psi })
-                    {
-                        process.Start();
-
-                        StreamWriter sw = process.StandardInput;
-                        StreamReader sr = process.StandardError;
-
-                        if (sw.BaseStream.CanWrite)
-                        {
-                            sw.WriteLine(backupCommand);
-                            sw.WriteLine("exit");
-                        }
-
-                        string errors = await sr.ReadToEndAsync();
-
-                        await process.WaitForExitAsync();
-
-                        if (string.IsNullOrEmpty(errors))
-                        {
-                            await logger.LogAsync("Yedekleme tamamlandı.");
-                        }
-                        else
-                        {
-                            await logger.LogAsync($"Hata oluştu: {errors}");
-                        }
+                        MessageBox.Show("Seçili şemada yedeklenecek tablo bulunamadı.");
                         progressBarBackup.Visibility = Visibility.Collapsed;
                         progressBarBackup.IsIndeterminate = false;
+                        return;
+                    }
+
+                    using (var folderBrowser = new System.Windows.Forms.FolderBrowserDialog())
+                    {
+                        if (folderBrowser.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                        {
+                            Environment.SetEnvironmentVariable("PGPASSWORD", "123456");
+                            string psqlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "psql.exe");
+                            string startDate = dpStartDate.SelectedDate.Value.ToString("yyyy-MM-dd");
+                            string endDate = dpEndDate.SelectedDate.Value.ToString("yyyy-MM-dd");
+
+                            foreach (string tableName in tableNames)
+                            {
+                                // Önce veri kontrolü yap
+                                bool hasData = await CheckTableHasData(databaseName, schemaName, tableName, startDate, endDate, txtIpAddress.Text);
+                                if (!hasData)
+                                {
+                                    await logger.LogAsync($"{tableName} tablosunda belirtilen tarih aralığında veri bulunamadı. CSV yedeği atlandı.");
+                                    continue;
+                                }
+
+                                string backupFilePath = Path.Combine(folderBrowser.SelectedPath, $"{databaseName}_{schemaName}_{tableName}_backup.csv");
+
+                                string safeBackupPath = backupFilePath.Replace("\\", "/");
+                                string safeTableName = tableName.Replace("\"", "\"\"");
+                                string safeSchemaName = schemaName.Replace("\"", "\"\"");
+
+                                string copyQuery = $"\\copy (SELECT * FROM \\\"{safeSchemaName}\\\".\\\"{safeTableName}\\\" WHERE \\\"sys_tag_log_time\\\" BETWEEN '{startDate}' AND '{endDate}') TO '{safeBackupPath}' WITH CSV HEADER";
+
+                                string command = $"\"{psqlPath}\" --host \"{txtIpAddress.Text}\" --port 5432 --username postgres --dbname \"{databaseName}\" -c \"{copyQuery}\"";
+
+                                ProcessStartInfo psi = new ProcessStartInfo
+                                {
+                                    FileName = "cmd.exe",
+                                    RedirectStandardInput = true,
+                                    RedirectStandardOutput = true,
+                                    RedirectStandardError = true,
+                                    UseShellExecute = false,
+                                    CreateNoWindow = true
+                                };
+
+                                using (Process process = new Process { StartInfo = psi })
+                                {
+                                    process.Start();
+
+                                    using (StreamWriter sw = process.StandardInput)
+                                    {
+                                        if (sw.BaseStream.CanWrite)
+                                        {
+                                            sw.WriteLine(command);
+                                            sw.WriteLine("exit");
+                                        }
+                                    }
+
+                                    string errors = await process.StandardError.ReadToEndAsync();
+                                    await process.WaitForExitAsync();
+
+                                    if (string.IsNullOrEmpty(errors))
+                                    {
+                                        await logger.LogAsync($"{tableName} tablosunun CSV yedeği başarıyla oluşturuldu.");
+                                    }
+                                    else
+                                    {
+                                        await logger.LogAsync($"Tablo {tableName} CSV yedeği alınırken hata oluştu: {errors}");
+                                    }
+                                }
+                            }
+
+                        }
+                    }
+                }
+
+                else
+                {
+                    SaveFileDialog saveFileDialog = new SaveFileDialog
+                    {
+                        Filter = "SQL files (*.sql)|*.sql",
+                        FileName = $"{databaseName}_{schemaName}_backup.sql"
+                    };
+
+                    if (saveFileDialog.ShowDialog() == true)
+                    {
+                        Environment.SetEnvironmentVariable("PGPASSWORD", "123456");
+                        string pgDumpPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pg_dump.exe");
+                        // Şema yedeği alırken --schema parametresi kullanılıyor.
+                        string backupCommand = $"\"{pgDumpPath}\" --host \"{txtIpAddress.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --schema \"{schemaName}\" -f \"{saveFileDialog.FileName}\" \"{databaseName}\"";
+
+                        ProcessStartInfo psi = new ProcessStartInfo
+                        {
+                            FileName = "cmd.exe",
+                            RedirectStandardInput = true,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+
+                        using (Process process = new Process { StartInfo = psi })
+                        {
+                            process.Start();
+
+                            using (StreamWriter sw = process.StandardInput)
+                            {
+                                if (sw.BaseStream.CanWrite)
+                                {
+                                    sw.WriteLine(backupCommand);
+                                    sw.WriteLine("exit");
+                                }
+                            }
+
+                            string errors = await process.StandardError.ReadToEndAsync();
+                            await process.WaitForExitAsync();
+
+                            if (string.IsNullOrEmpty(errors))
+                            {
+                                await logger.LogAsync("Yedekleme tamamlandı.");
+                            }
+                            else
+                            {
+                                await logger.LogAsync($"Hata oluştu: {errors}");
+                            }
+                        }
                     }
                 }
             }
+            progressBarBackup.Visibility = Visibility.Collapsed;
+            progressBarBackup.IsIndeterminate = false;
         }
 
         private string backupFilePath;
@@ -391,6 +517,135 @@ namespace PostgreSQLBackupRestore
             {
                 MessageBox.Show("Lütfen silmek istediğiniz şemayı seçin.");
             }
+        }
+        private async void RestoreCsvFilesWithConflictHandling_Click(object sender, RoutedEventArgs e)
+        {
+            if (cbDatabasesRestore.SelectedItem == null)
+            {
+                MessageBox.Show("Lütfen bir veritabanı seçin.");
+                return;
+            }
+
+            OpenFileDialog openFileDialog = new OpenFileDialog
+            {
+                Filter = "CSV files (*.csv)|*.csv",
+                Multiselect = true,
+                Title = "CSV Dosyalarını Seçin"
+            };
+
+            if (openFileDialog.ShowDialog() != true)
+                return;
+
+            string databaseName = ((DataRowView)cbDatabasesRestore.SelectedItem)["database_name"].ToString();
+            string connectionString = BuildConnectionString(txtIpAddressRestore.Text, databaseName);
+
+            foreach (string csvFilePath in openFileDialog.FileNames)
+            {
+                string fileName = Path.GetFileNameWithoutExtension(csvFilePath);
+                var parts = fileName.Split('_');
+                if (parts.Length < 3)
+                {
+                    await logger.LogAsync($"Geçersiz dosya adı formatı: {fileName}");
+                    continue;
+                }
+
+                string schema = parts[1];
+                string table = parts[2];
+
+                try
+                {
+                    DataTable csvData = ReadCsvToDataTable(csvFilePath);
+                    if (csvData.Columns.Contains("sys_tag_log_id") == false)
+                    {
+                        await logger.LogAsync($"CSV dosyasında 'sys_tag_log_id' alanı bulunamadı: {fileName}");
+                        continue;
+                    }
+
+                    using (var conn = new NpgsqlConnection(connectionString))
+                    {
+                        await conn.OpenAsync();
+
+                        List<string> columnNames = csvData.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
+                        var nonKeyCols = columnNames.Where(c => c != "sys_tag_log_id").ToList();
+
+                        foreach (DataRow row in csvData.Rows)
+                        {
+                            string insert = $@"
+                        INSERT INTO ""{schema}"".""{table}"" ({string.Join(",", columnNames.Select(c => $"\"{c}\""))})
+                        VALUES ({string.Join(",", columnNames.Select(c => $"@{c}"))})
+                        ON CONFLICT (sys_tag_log_id) DO UPDATE SET 
+                        {string.Join(",", nonKeyCols.Select(c => $"\"{c}\" = EXCLUDED.\"{c}\""))};";
+
+                            using (var cmd = new NpgsqlCommand(insert, conn))
+                            {
+                                foreach (var col in columnNames)
+                                {
+                                    object rawValue = row[col] ?? DBNull.Value;
+
+                                    if (rawValue is string s)
+                                    {
+                                        if (string.IsNullOrWhiteSpace(s))
+                                        {
+                                            rawValue = DBNull.Value;
+                                        }
+                                        else if (col.Equals("sys_tag_log_id", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            rawValue = long.TryParse(s, out var parsedLong) ? (object)parsedLong : DBNull.Value;
+                                        }
+                                        else if (col.Equals("sys_tag_log_time", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            rawValue = DateTime.TryParse(s, out var parsedDate) ? (object)parsedDate : DBNull.Value;
+                                        }
+                                        // İstersen başka özel dönüşüm kuralları da ekleyebilirsin
+                                    }
+
+                                    cmd.Parameters.AddWithValue($"@{col}", rawValue);
+                                }
+
+                                await cmd.ExecuteNonQueryAsync();
+                            }
+                        }
+
+                        await logger.LogAsync($"✔ {schema}.{table} CSV başarıyla geri yüklendi. Çakışmalar kontrol edildi.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await logger.LogAsync($"❌ Hata oluştu ({schema}.{table}): {ex.Message}");
+                }
+            }
+
+            MessageBox.Show("CSV dosyalarının geri yükleme işlemi tamamlandı.");
+        }
+        private DataTable ReadCsvToDataTable(string filePath)
+        {
+            DataTable dt = new DataTable();
+
+            using (var reader = new StreamReader(filePath))
+            {
+                bool isFirstLine = true;
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    var values = line.Split(',');
+
+                    if (isFirstLine)
+                    {
+                        foreach (var header in values)
+                            dt.Columns.Add(header.Trim());
+                        isFirstLine = false;
+                    }
+                    else
+                    {
+                        var row = dt.NewRow();
+                        for (int i = 0; i < values.Length && i < dt.Columns.Count; i++)
+                            row[i] = values[i].Trim();
+                        dt.Rows.Add(row);
+                    }
+                }
+            }
+
+            return dt;
         }
 
         private async void cbDatabasesRestore_SelectionChanged(object sender, SelectionChangedEventArgs e)
