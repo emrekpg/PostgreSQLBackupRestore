@@ -27,8 +27,8 @@ namespace PostgreSQLBackupRestore
                 tcs.TrySetResult(true);
             }
 
-            process.EnableRaisingEvents = true;
-            process.Exited += ProcessExited;
+            process.EnableRaisingEvents =  true;
+            process.Exited              += ProcessExited;
 
             return tcs.Task.ContinueWith(t =>
             {
@@ -40,8 +40,8 @@ namespace PostgreSQLBackupRestore
 
     public partial class MainWindow : Window
     {
-        private NpgsqlConnection connection;
-        private ILogger logger;
+        private NpgsqlConnection                connection;
+        private ILogger                         logger;
         private ObservableCollection<TableInfo> tableInfoList = new ObservableCollection<TableInfo>();
 
         public MainWindow()
@@ -57,13 +57,14 @@ namespace PostgreSQLBackupRestore
 
         private async void Connect_Click(object sender, RoutedEventArgs e)
         {
-            progressBarBackup.Visibility = Visibility.Visible;
+            progressBarBackup.Visibility      = Visibility.Visible;
             progressBarBackup.IsIndeterminate = true;
 
             try
             {
                 string connectionString = BuildConnectionString(txtIpAddress.Text);
-                await ExecuteDatabaseCommand(connectionString, "SELECT datname as database_name FROM pg_database", cbDatabases);
+                await ExecuteDatabaseCommand(connectionString, "SELECT datname as database_name FROM pg_database",
+                    cbDatabases);
                 lbSchemas.ItemsSource = null; // Şema listesini temizle
                 await logger.LogAsync("Bağlantı başarıyla gerçekleştirildi.");
             }
@@ -74,11 +75,10 @@ namespace PostgreSQLBackupRestore
             finally
             {
                 // ProgressBar'ı gizle
-                progressBarBackup.Visibility = Visibility.Collapsed;
+                progressBarBackup.Visibility      = Visibility.Collapsed;
                 progressBarBackup.IsIndeterminate = false;
             }
         }
-
 
         private async void cbDatabases_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -88,7 +88,9 @@ namespace PostgreSQLBackupRestore
                 string databaseName = selectedDatabase["database_name"].ToString();
                 string connectionString = BuildConnectionString(txtIpAddress.Text, databaseName);
 
-                await ExecuteDatabaseCommand(connectionString, $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'", lbSchemas);
+                await ExecuteDatabaseCommand(connectionString,
+                    $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'",
+                    lbSchemas);
             }
         }
 
@@ -114,6 +116,7 @@ namespace PostgreSQLBackupRestore
                     await FillDataTableAsync(dbConnection, query, dt);
                     control.ItemsSource = dt.DefaultView;
                 }
+
                 await logger.LogAsync($"Veritabanı sorgusu başarıyla çalıştırıldı: {query}");
             }
             catch (Exception ex)
@@ -121,17 +124,20 @@ namespace PostgreSQLBackupRestore
                 await logger.LogAsync($"Veritabanı sorgusu çalıştırılırken bir hata oluştu: {ex.Message}");
             }
         }
-        private async Task<List<string>> GetTableNamesForSchema(string databaseName, string schemaName, string ipAddress)
+
+        private async Task<List<string>> GetTableNamesForSchema(string databaseName, string schemaName,
+            string                                                     ipAddress)
         {
             List<string> tableNames = new List<string>();
-            string connectionString = $"Host={ipAddress};Database={databaseName};Username=postgres;Password=123456;Timeout=60;Pooling=true;";
+            string connectionString =
+                $"Host={ipAddress};Database={databaseName};Username=postgres;Password=123456;Timeout=60;Pooling=true;";
             string query = $"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schemaName}'";
 
             using (NpgsqlConnection connection = new NpgsqlConnection(connectionString))
             {
                 await connection.OpenAsync();
                 using (NpgsqlCommand command = new NpgsqlCommand(query, connection))
-                using (NpgsqlDataReader reader =  command.ExecuteReader())
+                using (NpgsqlDataReader reader = command.ExecuteReader())
                 {
                     while (await reader.ReadAsync())
                     {
@@ -139,16 +145,21 @@ namespace PostgreSQLBackupRestore
                     }
                 }
             }
+
             return tableNames;
         }
-        private async Task<bool> CheckTableHasData(string dbName, string schema, string table, string startDate, string endDate, string host)
+
+        private async Task<bool> CheckTableHasData(string dbName,  string schema, string table, string startDate,
+            string                                        endDate, string host)
         {
             try
             {
-                using (var conn = new Npgsql.NpgsqlConnection($"Host={host};Port=5432;Username=postgres;Password=123456;Database={dbName}"))
+                using (var conn = new Npgsql.NpgsqlConnection(
+                           $"Host={host};Port=5432;Username=postgres;Password=123456;Database={dbName}"))
                 {
                     await conn.OpenAsync();
-                    string query = $"SELECT COUNT(*) FROM \"{schema}\".\"{table}\" WHERE \"sys_tag_log_time\" BETWEEN '{startDate}' AND '{endDate}'";
+                    string query =
+                        $"SELECT COUNT(*) FROM \"{schema}\".\"{table}\" WHERE \"sys_tag_log_time\" BETWEEN '{startDate}' AND '{endDate}'";
                     using (var cmd = new Npgsql.NpgsqlCommand(query, conn))
                     {
                         var result = await cmd.ExecuteScalarAsync();
@@ -165,7 +176,7 @@ namespace PostgreSQLBackupRestore
 
         private async void lbSchemas_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            progressBarBackup.Visibility = Visibility.Visible;
+            progressBarBackup.Visibility      = Visibility.Visible;
             progressBarBackup.IsIndeterminate = true;
 
             if (lbSchemas.SelectedItem != null)
@@ -175,13 +186,14 @@ namespace PostgreSQLBackupRestore
                 string databaseName = ((DataRowView)cbDatabases.SelectedItem)["database_name"].ToString();
 
                 // Eğer checkbox işaretliyse tarih aralığına göre tablo bazlı yedekleme yap
-                if (chkDateFilter.IsChecked == true && dpStartDate.SelectedDate.HasValue && dpEndDate.SelectedDate.HasValue)
+                if (chkDateFilter.IsChecked == true && dpStartDate.SelectedDate.HasValue &&
+                    dpEndDate.SelectedDate.HasValue)
                 {
                     List<string> tableNames = await GetTableNamesForSchema(databaseName, schemaName, txtIpAddress.Text);
                     if (tableNames.Count == 0)
                     {
                         MessageBox.Show("Seçili şemada yedeklenecek tablo bulunamadı.");
-                        progressBarBackup.Visibility = Visibility.Collapsed;
+                        progressBarBackup.Visibility      = Visibility.Collapsed;
                         progressBarBackup.IsIndeterminate = false;
                         return;
                     }
@@ -198,31 +210,36 @@ namespace PostgreSQLBackupRestore
                             foreach (string tableName in tableNames)
                             {
                                 // Önce veri kontrolü yap
-                                bool hasData = await CheckTableHasData(databaseName, schemaName, tableName, startDate, endDate, txtIpAddress.Text);
+                                bool hasData = await CheckTableHasData(databaseName, schemaName, tableName, startDate,
+                                    endDate, txtIpAddress.Text);
                                 if (!hasData)
                                 {
-                                    await logger.LogAsync($"{tableName} tablosunda belirtilen tarih aralığında veri bulunamadı. CSV yedeği atlandı.");
+                                    await logger.LogAsync(
+                                        $"{tableName} tablosunda belirtilen tarih aralığında veri bulunamadı. CSV yedeği atlandı.");
                                     continue;
                                 }
 
-                                string backupFilePath = Path.Combine(folderBrowser.SelectedPath, $"{databaseName}_{schemaName}_{tableName}_backup.csv");
+                                string backupFilePath = Path.Combine(folderBrowser.SelectedPath,
+                                    $"{databaseName}_{schemaName}_{tableName}_backup.csv");
 
                                 string safeBackupPath = backupFilePath.Replace("\\", "/");
                                 string safeTableName = tableName.Replace("\"", "\"\"");
                                 string safeSchemaName = schemaName.Replace("\"", "\"\"");
 
-                                string copyQuery = $"\\copy (SELECT * FROM \\\"{safeSchemaName}\\\".\\\"{safeTableName}\\\" WHERE \\\"sys_tag_log_time\\\" BETWEEN '{startDate}' AND '{endDate}') TO '{safeBackupPath}' WITH CSV HEADER";
+                                string copyQuery =
+                                    $"\\copy (SELECT * FROM \\\"{safeSchemaName}\\\".\\\"{safeTableName}\\\" WHERE \\\"sys_tag_log_time\\\" BETWEEN '{startDate}' AND '{endDate}') TO '{safeBackupPath}' WITH CSV HEADER";
 
-                                string command = $"\"{psqlPath}\" --host \"{txtIpAddress.Text}\" --port 5432 --username postgres --dbname \"{databaseName}\" -c \"{copyQuery}\"";
+                                string command =
+                                    $"\"{psqlPath}\" --host \"{txtIpAddress.Text}\" --port 5432 --username postgres --dbname \"{databaseName}\" -c \"{copyQuery}\"";
 
                                 ProcessStartInfo psi = new ProcessStartInfo
                                 {
-                                    FileName = "cmd.exe",
-                                    RedirectStandardInput = true,
+                                    FileName               = "cmd.exe",
+                                    RedirectStandardInput  = true,
                                     RedirectStandardOutput = true,
-                                    RedirectStandardError = true,
-                                    UseShellExecute = false,
-                                    CreateNoWindow = true
+                                    RedirectStandardError  = true,
+                                    UseShellExecute        = false,
+                                    CreateNoWindow         = true
                                 };
 
                                 using (Process process = new Process { StartInfo = psi })
@@ -243,15 +260,16 @@ namespace PostgreSQLBackupRestore
 
                                     if (string.IsNullOrEmpty(errors))
                                     {
-                                        await logger.LogAsync($"{tableName} tablosunun CSV yedeği başarıyla oluşturuldu.");
+                                        await logger.LogAsync(
+                                            $"{tableName} tablosunun CSV yedeği başarıyla oluşturuldu.");
                                     }
                                     else
                                     {
-                                        await logger.LogAsync($"Tablo {tableName} CSV yedeği alınırken hata oluştu: {errors}");
+                                        await logger.LogAsync(
+                                            $"Tablo {tableName} CSV yedeği alınırken hata oluştu: {errors}");
                                     }
                                 }
                             }
-
                         }
                     }
                 }
@@ -260,7 +278,7 @@ namespace PostgreSQLBackupRestore
                 {
                     SaveFileDialog saveFileDialog = new SaveFileDialog
                     {
-                        Filter = "SQL files (*.sql)|*.sql",
+                        Filter   = "SQL files (*.sql)|*.sql",
                         FileName = $"{databaseName}_{schemaName}_backup.sql"
                     };
 
@@ -269,16 +287,17 @@ namespace PostgreSQLBackupRestore
                         Environment.SetEnvironmentVariable("PGPASSWORD", "123456");
                         string pgDumpPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pg_dump.exe");
                         // Şema yedeği alırken --schema parametresi kullanılıyor.
-                        string backupCommand = $"\"{pgDumpPath}\" --host \"{txtIpAddress.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --schema \"{schemaName}\" -f \"{saveFileDialog.FileName}\" \"{databaseName}\"";
+                        string backupCommand =
+                            $"\"{pgDumpPath}\" --host \"{txtIpAddress.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --schema \"{schemaName}\" -f \"{saveFileDialog.FileName}\" \"{databaseName}\"";
 
                         ProcessStartInfo psi = new ProcessStartInfo
                         {
-                            FileName = "cmd.exe",
-                            RedirectStandardInput = true,
+                            FileName               = "cmd.exe",
+                            RedirectStandardInput  = true,
                             RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            UseShellExecute = false,
-                            CreateNoWindow = true
+                            RedirectStandardError  = true,
+                            UseShellExecute        = false,
+                            CreateNoWindow         = true
                         };
 
                         using (Process process = new Process { StartInfo = psi })
@@ -309,7 +328,8 @@ namespace PostgreSQLBackupRestore
                     }
                 }
             }
-            progressBarBackup.Visibility = Visibility.Collapsed;
+
+            progressBarBackup.Visibility      = Visibility.Collapsed;
             progressBarBackup.IsIndeterminate = false;
         }
 
@@ -324,14 +344,14 @@ namespace PostgreSQLBackupRestore
 
             if (openFileDialog.ShowDialog() == true)
             {
-                backupFilePath = openFileDialog.FileName;
+                backupFilePath         = openFileDialog.FileName;
                 txtBackupFilePath.Text = backupFilePath;
             }
         }
 
         private async void RestoreBackup_Click(object sender, RoutedEventArgs e)
         {
-            progressBarRestore.Visibility = Visibility.Visible;
+            progressBarRestore.Visibility      = Visibility.Visible;
             progressBarRestore.IsIndeterminate = true;
 
             try
@@ -344,18 +364,20 @@ namespace PostgreSQLBackupRestore
                     {
                         string databaseName = selectedDatabase["database_name"].ToString();
 
-                        string psqlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "psql.exe"); // psql.exe'nin yolu
-                        string restoreCommand = $"-h \"{txtIpAddressRestore.Text}\" -U postgres -d \"{databaseName}\" -f \"{backupFilePath}\"";
+                        string psqlPath =
+                            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "psql.exe"); // psql.exe'nin yolu
+                        string restoreCommand =
+                            $"-h \"{txtIpAddressRestore.Text}\" -U postgres -d \"{databaseName}\" -f \"{backupFilePath}\"";
 
                         ProcessStartInfo psi = new ProcessStartInfo
                         {
-                            FileName = psqlPath,
-                            Arguments = restoreCommand,
-                            UseShellExecute = false,
-                            CreateNoWindow = true,
-                            RedirectStandardInput = true,
+                            FileName               = psqlPath,
+                            Arguments              = restoreCommand,
+                            UseShellExecute        = false,
+                            CreateNoWindow         = true,
+                            RedirectStandardInput  = true,
                             RedirectStandardOutput = true,
-                            RedirectStandardError = true
+                            RedirectStandardError  = true
                         };
                         psi.EnvironmentVariables["PGPASSWORD"] = "123456"; // PostgreSQL şifrenizi burada belirtin
 
@@ -402,16 +424,18 @@ namespace PostgreSQLBackupRestore
                 DataRowView electedDatabase = (DataRowView)cbDatabasesRestore.SelectedItem;
                 string dBName = electedDatabase["database_name"].ToString();
                 string connectionString = BuildConnectionString(txtIpAddressRestore.Text, dBName);
-                string schemaName = "TESASch"; // Şema adı
+                string schemaName = "TESASch";                     // Şema adı
                 string triggerName = "trg_event_eventvalueinsert"; // Tetikleyici adı
-                string triggerSql = @"CREATE TRIGGER trg_event_eventvalueinsert BEFORE INSERT ON ""TESASch"".t_event FOR EACH ROW EXECUTE PROCEDURE ""TESASch"".trg_event_eventvalueinsert();";
+                string triggerSql =
+                    @"CREATE TRIGGER trg_event_eventvalueinsert BEFORE INSERT ON ""TESASch"".t_event FOR EACH ROW EXECUTE PROCEDURE ""TESASch"".trg_event_eventvalueinsert();";
                 await CreateTriggerIfNotExists(connectionString, schemaName, triggerName, triggerSql);
-                progressBarRestore.Visibility = Visibility.Collapsed;
+                progressBarRestore.Visibility      = Visibility.Collapsed;
                 progressBarRestore.IsIndeterminate = false;
             }
         }
 
-        private async Task<bool> CheckIfTriggerExists(NpgsqlConnection connection, string schemaName, string triggerName)
+        private async Task<bool> CheckIfTriggerExists(NpgsqlConnection connection, string schemaName,
+            string                                                     triggerName)
         {
             string query = $"SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '{triggerName}');";
             using (NpgsqlCommand cmd = new NpgsqlCommand(query, connection))
@@ -420,7 +444,8 @@ namespace PostgreSQLBackupRestore
             }
         }
 
-        private async Task CreateTriggerIfNotExists(string connectionString, string schemaName, string triggerName, string triggerSql)
+        private async Task CreateTriggerIfNotExists(string connectionString, string schemaName, string triggerName,
+            string                                         triggerSql)
         {
             using (NpgsqlConnection conn = new NpgsqlConnection(connectionString))
             {
@@ -439,26 +464,27 @@ namespace PostgreSQLBackupRestore
 
         private async void ConnectRestore_Click(object sender, RoutedEventArgs e)
         {
-            progressBarRestore.Visibility = Visibility.Visible;
+            progressBarRestore.Visibility      = Visibility.Visible;
             progressBarRestore.IsIndeterminate = true;
 
             try
             {
                 string connectionString = BuildConnectionString(txtIpAddressRestore.Text);
-                await ExecuteDatabaseCommand(connectionString, "SELECT datname as database_name FROM pg_database", cbDatabasesRestore);
+                await ExecuteDatabaseCommand(connectionString, "SELECT datname as database_name FROM pg_database",
+                    cbDatabasesRestore);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Bağlantıda bir hata oluştu: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Bağlantıda bir hata oluştu: {ex.Message}", "Hata", MessageBoxButton.OK,
+                    MessageBoxImage.Error);
                 await logger.LogAsync($"Bağlantı hatası: {ex.Message}");
             }
             finally
             {
-                progressBarRestore.Visibility = Visibility.Collapsed;
+                progressBarRestore.Visibility      = Visibility.Collapsed;
                 progressBarRestore.IsIndeterminate = false;
             }
         }
-
 
         private async void DropCascade_Click(object sender, RoutedEventArgs e)
         {
@@ -469,7 +495,7 @@ namespace PostgreSQLBackupRestore
                 string databaseName = ((DataRowView)cbDatabasesRestore.SelectedItem)["database_name"].ToString();
                 string connectionString = BuildConnectionString(txtIpAddressRestore.Text, databaseName);
 
-                progressBarRestore.Visibility = Visibility.Visible;
+                progressBarRestore.Visibility      = Visibility.Visible;
                 progressBarRestore.IsIndeterminate = true;
 
                 using (NpgsqlConnection dbConnection = new NpgsqlConnection(connectionString))
@@ -479,14 +505,17 @@ namespace PostgreSQLBackupRestore
                         await dbConnection.OpenAsync();
 
                         // Şemanın var olup olmadığını kontrol et
-                        NpgsqlCommand checkSchemaCommand = new NpgsqlCommand("SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = @schemaName)", dbConnection);
+                        NpgsqlCommand checkSchemaCommand = new NpgsqlCommand(
+                            "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = @schemaName)",
+                            dbConnection);
                         checkSchemaCommand.Parameters.AddWithValue("schemaName", schemaName);
                         bool schemaExists = (bool)await checkSchemaCommand.ExecuteScalarAsync();
 
                         if (schemaExists)
                         {
                             // Şemayı sil
-                            NpgsqlCommand dropSchemaCommand = new NpgsqlCommand($"DROP SCHEMA \"{schemaName}\" CASCADE", dbConnection);
+                            NpgsqlCommand dropSchemaCommand =
+                                new NpgsqlCommand($"DROP SCHEMA \"{schemaName}\" CASCADE", dbConnection);
                             dropSchemaCommand.Parameters.AddWithValue("schemaName", schemaName);
                             await dropSchemaCommand.ExecuteNonQueryAsync();
                             await logger.LogAsync($"Şema başarıyla silindi: {schemaName}");
@@ -502,13 +531,15 @@ namespace PostgreSQLBackupRestore
                     }
                     finally
                     {
-                        progressBarRestore.Visibility = Visibility.Collapsed;
+                        progressBarRestore.Visibility      = Visibility.Collapsed;
                         progressBarRestore.IsIndeterminate = false;
 
                         // Şema listesini yenile.
                         if (dbConnection.State == ConnectionState.Open)
                         {
-                            await ExecuteDatabaseCommand(connectionString, $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'", lbSchemasRestore);
+                            await ExecuteDatabaseCommand(connectionString,
+                                $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'",
+                                lbSchemasRestore);
                         }
                     }
                 }
@@ -518,6 +549,7 @@ namespace PostgreSQLBackupRestore
                 MessageBox.Show("Lütfen silmek istediğiniz şemayı seçin.");
             }
         }
+
         private async void RestoreCsvFilesWithConflictHandling_Click(object sender, RoutedEventArgs e)
         {
             if (cbDatabasesRestore.SelectedItem == null)
@@ -528,9 +560,9 @@ namespace PostgreSQLBackupRestore
 
             OpenFileDialog openFileDialog = new OpenFileDialog
             {
-                Filter = "CSV files (*.csv)|*.csv",
+                Filter      = "CSV files (*.csv)|*.csv",
                 Multiselect = true,
-                Title = "CSV Dosyalarını Seçin"
+                Title       = "CSV Dosyalarını Seçin"
             };
 
             if (openFileDialog.ShowDialog() != true)
@@ -565,7 +597,8 @@ namespace PostgreSQLBackupRestore
                     {
                         await conn.OpenAsync();
 
-                        List<string> columnNames = csvData.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
+                        List<string> columnNames =
+                            csvData.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
                         var nonKeyCols = columnNames.Where(c => c != "sys_tag_log_id").ToList();
 
                         foreach (DataRow row in csvData.Rows)
@@ -590,11 +623,15 @@ namespace PostgreSQLBackupRestore
                                         }
                                         else if (col.Equals("sys_tag_log_id", StringComparison.OrdinalIgnoreCase))
                                         {
-                                            rawValue = long.TryParse(s, out var parsedLong) ? (object)parsedLong : DBNull.Value;
+                                            rawValue = long.TryParse(s, out var parsedLong)
+                                                ? (object)parsedLong
+                                                : DBNull.Value;
                                         }
                                         else if (col.Equals("sys_tag_log_time", StringComparison.OrdinalIgnoreCase))
                                         {
-                                            rawValue = DateTime.TryParse(s, out var parsedDate) ? (object)parsedDate : DBNull.Value;
+                                            rawValue = DateTime.TryParse(s, out var parsedDate)
+                                                ? (object)parsedDate
+                                                : DBNull.Value;
                                         }
                                         // İstersen başka özel dönüşüm kuralları da ekleyebilirsin
                                     }
@@ -606,7 +643,8 @@ namespace PostgreSQLBackupRestore
                             }
                         }
 
-                        await logger.LogAsync($"✔ {schema}.{table} CSV başarıyla geri yüklendi. Çakışmalar kontrol edildi.");
+                        await logger.LogAsync(
+                            $"✔ {schema}.{table} CSV başarıyla geri yüklendi. Çakışmalar kontrol edildi.");
                     }
                 }
                 catch (Exception ex)
@@ -617,6 +655,7 @@ namespace PostgreSQLBackupRestore
 
             MessageBox.Show("CSV dosyalarının geri yükleme işlemi tamamlandı.");
         }
+
         private DataTable ReadCsvToDataTable(string filePath)
         {
             DataTable dt = new DataTable();
@@ -656,7 +695,9 @@ namespace PostgreSQLBackupRestore
                 string databaseName = selectedDatabase["database_name"].ToString();
                 string connectionString = BuildConnectionString(txtIpAddressRestore.Text, databaseName);
 
-                await ExecuteDatabaseCommand(connectionString, $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'", lbSchemasRestore);
+                await ExecuteDatabaseCommand(connectionString,
+                    $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'",
+                    lbSchemasRestore);
             }
         }
 
@@ -668,7 +709,9 @@ namespace PostgreSQLBackupRestore
                 string databaseName = selectedDatabase["database_name"].ToString();
                 string connectionString = BuildConnectionString(txtIpAddressRestore.Text, databaseName);
 
-                await ExecuteDatabaseCommand(connectionString, $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'", lbSchemasRestore);
+                await ExecuteDatabaseCommand(connectionString,
+                    $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'",
+                    lbSchemasRestore);
             }
         }
 
@@ -680,7 +723,9 @@ namespace PostgreSQLBackupRestore
                 string databaseName = selectedDatabase["database_name"].ToString();
                 string connectionString = BuildConnectionString(txtIpAddress.Text, databaseName);
 
-                await ExecuteDatabaseCommand(connectionString, $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'", lbSchemas);
+                await ExecuteDatabaseCommand(connectionString,
+                    $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'",
+                    lbSchemas);
             }
             else
             {
@@ -721,7 +766,8 @@ namespace PostgreSQLBackupRestore
                     tableInfoList.Clear();
                     foreach (DataRow row in table.Rows)
                     {
-                        tableInfoList.Add(new TableInfo { TableName = row["table_name"].ToString(), IsSelected = false });
+                        tableInfoList.Add(
+                            new TableInfo { TableName = row["table_name"].ToString(), IsSelected = false });
                     }
 
                     // ListBox'un ItemsSource'unu güncelle
@@ -729,27 +775,30 @@ namespace PostgreSQLBackupRestore
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Veritabanı sorgusunda hata oluştu: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Veritabanı sorgusunda hata oluştu: {ex.Message}", "Hata", MessageBoxButton.OK,
+                        MessageBoxImage.Error);
                     // Loglama için ILogger kullanabilirsiniz
                 }
             }
             else
             {
-                MessageBox.Show("Lütfen bir veritabanı ve şema seçin.", "Bilgi", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("Lütfen bir veritabanı ve şema seçin.", "Bilgi", MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
         }
 
         private async void ConnectTableBackup_Click(object sender, RoutedEventArgs e)
         {
-            progressBarTableBackup.Visibility = Visibility.Visible;
+            progressBarTableBackup.Visibility      = Visibility.Visible;
             progressBarTableBackup.IsIndeterminate = true;
 
             try
             {
                 string connectionString = BuildConnectionString(txtIpAddressTableBackup.Text);
-                await ExecuteDatabaseCommand(connectionString, "SELECT datname as database_name FROM pg_database", cbDatabasesTableBackup);
+                await ExecuteDatabaseCommand(connectionString, "SELECT datname as database_name FROM pg_database",
+                    cbDatabasesTableBackup);
                 await logger.LogAsync("Tablo yedekleme için bağlantı başarıyla gerçekleştirildi.");
-                if (lbTablesTableBackup.ItemsSource!=null)
+                if (lbTablesTableBackup.ItemsSource != null)
                 {
                     lbTablesTableBackup.ItemsSource = null;
                 }
@@ -760,23 +809,26 @@ namespace PostgreSQLBackupRestore
             }
             finally
             {
-                progressBarTableBackup.Visibility = Visibility.Collapsed;
+                progressBarTableBackup.Visibility      = Visibility.Collapsed;
                 progressBarTableBackup.IsIndeterminate = false;
             }
         }
+
         private async void cbDatabasesTableBackup_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (cbDatabasesTableBackup.SelectedItem != null)
             {
-                progressBarTableBackup.Visibility = Visibility.Visible;
+                progressBarTableBackup.Visibility      = Visibility.Visible;
                 progressBarTableBackup.IsIndeterminate = true;
 
                 DataRowView selectedDatabase = (DataRowView)cbDatabasesTableBackup.SelectedItem;
                 string databaseName = selectedDatabase["database_name"].ToString();
                 string connectionString = BuildConnectionString(txtIpAddressTableBackup.Text, databaseName);
                 //lbTablesTableBackup.ItemsSource = null;
-                await ExecuteDatabaseCommand(connectionString, $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'", cbSchemasTableBackup);
-                progressBarTableBackup.Visibility = Visibility.Collapsed;
+                await ExecuteDatabaseCommand(connectionString,
+                    $"SELECT schema_name FROM information_schema.schemata WHERE catalog_name = '{databaseName}'",
+                    cbSchemasTableBackup);
+                progressBarTableBackup.Visibility      = Visibility.Collapsed;
                 progressBarTableBackup.IsIndeterminate = false;
             }
             else
@@ -784,7 +836,6 @@ namespace PostgreSQLBackupRestore
                 lbTablesTableBackup.ItemsSource = null;
             }
         }
-
 
         private async void cbSchemasTableBackup_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -804,6 +855,7 @@ namespace PostgreSQLBackupRestore
                     DataRow row = rowView.Row;
                     tableInfoList.Add(new TableInfo { TableName = row["table_name"].ToString() });
                 }
+
                 lbTablesTableBackup.ItemsSource = tableInfoList;
                 lbTablesTableBackup.Items.Refresh(); // Bu satırı ekleyin
             }
@@ -828,26 +880,28 @@ namespace PostgreSQLBackupRestore
 
                 SaveFileDialog saveFileDialog = new SaveFileDialog
                 {
-                    Filter = "SQL files (*.sql)|*.sql",
+                    Filter   = "SQL files (*.sql)|*.sql",
                     FileName = $"{databaseName}_{schemaName}_{tableName}_backup.sql"
                 };
 
                 if (saveFileDialog.ShowDialog() == true)
                 {
                     Environment.SetEnvironmentVariable("PGPASSWORD", "123456"); // Burada PostgreSQL şifrenizi belirtin
-                    string pgDumpPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pg_dump.exe"); // pg_dump.exe'nin yolu
+                    string pgDumpPath =
+                        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pg_dump.exe"); // pg_dump.exe'nin yolu
 
                     // pg_dump komutunu oluştur
-                    string backupCommand = $"\"{pgDumpPath}\" --host \"{txtIpAddressTableBackup.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --file \"{saveFileDialog.FileName}\" --table \"\\\"{schemaName}\\\".\\\"{tableName}\\\"\" \"{databaseName}\"";
+                    string backupCommand =
+                        $"\"{pgDumpPath}\" --host \"{txtIpAddressTableBackup.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --file \"{saveFileDialog.FileName}\" --table \"\\\"{schemaName}\\\".\\\"{tableName}\\\"\" \"{databaseName}\"";
 
                     ProcessStartInfo psi = new ProcessStartInfo
                     {
-                        FileName = "cmd.exe",
-                        RedirectStandardInput = true,
+                        FileName               = "cmd.exe",
+                        RedirectStandardInput  = true,
                         RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
+                        RedirectStandardError  = true,
+                        UseShellExecute        = false,
+                        CreateNoWindow         = true
                     };
 
                     using (Process process = new Process { StartInfo = psi })
@@ -883,6 +937,7 @@ namespace PostgreSQLBackupRestore
                 }
             }
         }
+
         private async void DropTable_Click(object sender, RoutedEventArgs e)
         {
             var selectedTables = tableInfoList.Where(table => table.IsSelected).ToList();
@@ -908,18 +963,21 @@ namespace PostgreSQLBackupRestore
                             await command.ExecuteNonQueryAsync();
                             await logger.LogAsync($"Table successfully dropped: {schemaName}.{tableName}");
                         }
+
                         await RefreshTableList();
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show($"An error occurred while dropping tables: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show($"An error occurred while dropping tables: {ex.Message}", "Error",
+                            MessageBoxButton.OK, MessageBoxImage.Error);
                         await logger.LogAsync($"Error dropping tables: {ex.Message}");
                     }
                 }
             }
             else
             {
-                MessageBox.Show("Please select the tables you want to drop.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Please select the tables you want to drop.", "Warning", MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
             }
         }
 
@@ -928,7 +986,7 @@ namespace PostgreSQLBackupRestore
             OpenFileDialog openFileDialog = new OpenFileDialog
             {
                 Filter = "SQL files (*.sql)|*.sql|All files (*.*)|*.*",
-                Title = "Yedek Dosyasını Seç"
+                Title  = "Yedek Dosyasını Seç"
             };
 
             if (openFileDialog.ShowDialog() == true)
@@ -943,18 +1001,19 @@ namespace PostgreSQLBackupRestore
                 }
 
                 string databaseName = selectedDatabase["database_name"].ToString();
-                string arguments = $"/c psql -h {txtIpAddressTableBackup.Text} -U postgres -d {databaseName} -f \"{selectedBackupFilePath}\"";
+                string arguments =
+                    $"/c psql -h {txtIpAddressTableBackup.Text} -U postgres -d {databaseName} -f \"{selectedBackupFilePath}\"";
 
 
                 ProcessStartInfo psi = new ProcessStartInfo
                 {
-                    FileName = "cmd.exe",
-                    Arguments = arguments,
-                    UseShellExecute = false,
-                    RedirectStandardInput = true,
+                    FileName               = "cmd.exe",
+                    Arguments              = arguments,
+                    UseShellExecute        = false,
+                    RedirectStandardInput  = true,
                     RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
+                    RedirectStandardError  = true,
+                    CreateNoWindow         = true
                 };
                 psi.EnvironmentVariables["PGPASSWORD"] = "123456";
 
@@ -976,7 +1035,7 @@ namespace PostgreSQLBackupRestore
                     if (process.ExitCode == 0)
                     {
                         await logger.LogAsync("Yedek dosyası başarıyla geri yüklendi.");
-                        await RefreshTableList ();
+                        await RefreshTableList();
                     }
                     else
                     {
@@ -992,19 +1051,19 @@ namespace PostgreSQLBackupRestore
             {
                 lbTablesTableBackup.ItemsSource = tableInfoList;
                 lbTablesTableBackup.Items.Refresh(); // Bu satırı ekleyin
-
             }
             else
             {
-                var filtered = tableInfoList.Where(item => item.TableName.IndexOf(txtSearch.Text, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                var filtered = tableInfoList.Where(item =>
+                    item.TableName.IndexOf(txtSearch.Text, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
                 lbTablesTableBackup.ItemsSource = filtered;
             }
         }
 
         public class TableInfo
         {
-            public string TableName { get; set; }
-            public bool IsSelected { get; set; }
+            public string TableName  { get; set; }
+            public bool   IsSelected { get; set; }
         }
 
         public interface ILogger
@@ -1014,21 +1073,22 @@ namespace PostgreSQLBackupRestore
 
         public class FileLogger : ILogger
         {
-            private readonly string logFilePath;
-            private TextBox logTextBox;
+            private readonly string  logFilePath;
+            private          TextBox logTextBox;
 
             public FileLogger(string logDirectory, TextBox textBox)
             {
                 Directory.CreateDirectory(logDirectory);
                 // Log dosyasının adını "log.txt" olarak sabit tutuyoruz.
                 logFilePath = Path.Combine(logDirectory, "log.txt");
-                logTextBox = textBox;
+                logTextBox  = textBox;
             }
 
             public async Task LogAsync(string message)
             {
                 string logFileName = "ApplicationLog.txt"; // Log dosyasının adı
-                string logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, logFileName); // Log dosyasının tam yolu
+                string logFilePath =
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, logFileName); // Log dosyasının tam yolu
 
                 string logMessage = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}";
 
