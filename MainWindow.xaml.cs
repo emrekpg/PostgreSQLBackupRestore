@@ -181,14 +181,15 @@ namespace PostgreSQLBackupRestore
 
             if (lbSchemas.SelectedItem != null)
             {
-                DataRowView selectedSchema = (DataRowView)lbSchemas.SelectedItem;
-                string schemaName = selectedSchema["schema_name"].ToString();
-                string databaseName = ((DataRowView)cbDatabases.SelectedItem)["database_name"].ToString();
-
+                
                 // Eğer checkbox işaretliyse tarih aralığına göre tablo bazlı yedekleme yap
                 if (chkDateFilter.IsChecked == true && dpStartDate.SelectedDate.HasValue &&
                     dpEndDate.SelectedDate.HasValue)
                 {
+                    DataRowView selectedSchema = (DataRowView)lbSchemas.SelectedItem;
+                    string schemaName = selectedSchema["schema_name"].ToString();
+                    string databaseName = ((DataRowView)cbDatabases.SelectedItem)["database_name"].ToString();
+
                     List<string> tableNames = await GetTableNamesForSchema(databaseName, schemaName, txtIpAddress.Text);
                     if (tableNames.Count == 0)
                     {
@@ -276,9 +277,13 @@ namespace PostgreSQLBackupRestore
 
                 else
                 {
+                    DataRowView selectedSchema = (DataRowView)lbSchemas.SelectedItem;
+                    string schemaName = selectedSchema["schema_name"].ToString();
+                    string databaseName = ((DataRowView)cbDatabases.SelectedItem)["database_name"].ToString();
+
                     SaveFileDialog saveFileDialog = new SaveFileDialog
                     {
-                        Filter   = "SQL files (*.sql)|*.sql",
+                        Filter = "SQL files (*.sql)|*.sql",
                         FileName = $"{databaseName}_{schemaName}_backup.sql"
                     };
 
@@ -286,44 +291,45 @@ namespace PostgreSQLBackupRestore
                     {
                         Environment.SetEnvironmentVariable("PGPASSWORD", "123456");
                         string pgDumpPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pg_dump.exe");
-                        // Şema yedeği alırken --schema parametresi kullanılıyor.
-                        string backupCommand =
-                            $"\"{pgDumpPath}\" --host \"{txtIpAddress.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --schema \"{schemaName}\" -f \"{saveFileDialog.FileName}\" \"{databaseName}\"";
+                        string backupCommand = $"\"{pgDumpPath}\" --host \"{txtIpAddress.Text}\" --port \"5432\" --username \"postgres\" --no-password --verbose --format=p --blobs --schema \"\\\"{schemaName}\\\"\" -f \"{saveFileDialog.FileName}\" \"{databaseName}\"";
 
                         ProcessStartInfo psi = new ProcessStartInfo
                         {
-                            FileName               = "cmd.exe",
-                            RedirectStandardInput  = true,
+                            FileName = "cmd.exe",
+                            RedirectStandardInput = true,
                             RedirectStandardOutput = true,
-                            RedirectStandardError  = true,
-                            UseShellExecute        = false,
-                            CreateNoWindow         = true
+                            RedirectStandardError = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
                         };
 
                         using (Process process = new Process { StartInfo = psi })
                         {
                             process.Start();
 
-                            using (StreamWriter sw = process.StandardInput)
+                            StreamWriter sw = process.StandardInput;
+                            StreamReader sr = process.StandardError;
+
+                            if (sw.BaseStream.CanWrite)
                             {
-                                if (sw.BaseStream.CanWrite)
-                                {
-                                    sw.WriteLine(backupCommand);
-                                    sw.WriteLine("exit");
-                                }
+                                sw.WriteLine(backupCommand);
+                                sw.WriteLine("exit");
                             }
 
-                            string errors = await process.StandardError.ReadToEndAsync();
+                            string errors = await sr.ReadToEndAsync();
+
                             await process.WaitForExitAsync();
 
                             if (string.IsNullOrEmpty(errors))
                             {
-                                await logger.LogAsync("Yedekleme tamamlandı.");
+                                await logger.LogAsync("Yedekleme tamamlandÄ±.");
                             }
                             else
                             {
-                                await logger.LogAsync($"Hata oluştu: {errors}");
+                                await logger.LogAsync($"Hata oluÅŸtu: {errors}");
                             }
+                            progressBarBackup.Visibility = Visibility.Collapsed;
+                            progressBarBackup.IsIndeterminate = false;
                         }
                     }
                 }
